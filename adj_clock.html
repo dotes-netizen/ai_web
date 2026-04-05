@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>互動式網頁大時鐘 (顏色與縮放)</title>
+    <style>
+        /* CSS 變數：設定縮放因子和顏色 */
+        :root {
+            --zoom-factor: 1; 
+            --clock-color: #00ff66; /* 新增顏色變數，預設為亮綠色 */
+        }
+
+        /* 主容器樣式 */
+        body {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #222;
+            font-family: 'Consolas', 'Courier New', monospace;
+            overflow: hidden;
+            color: #ddd; 
+        }
+
+        /* 時鐘樣式：使用 CSS 變數 */
+        #digitalClock {
+            /* 使用縮放變數 */
+            font-size: calc(10vw * var(--zoom-factor)); 
+            
+            /* 關鍵更改：使用顏色變數 */
+            color: var(--clock-color);
+            text-shadow: 0 0 calc(1vw * var(--zoom-factor)) var(--clock-color); 
+            border: calc(0.5vw * var(--zoom-factor)) solid var(--clock-color);
+            
+            padding: 0.5em 0.8em;
+            border-radius: calc(1vw * var(--zoom-factor));
+            background-color: rgba(0, 0, 0, 0.5);
+            
+            margin-bottom: 30px; 
+            max-width: 90%; 
+            transition: all 0.1s ease-out; 
+        }
+
+        /* 控制面板容器樣式 */
+        #controls {
+            display: flex;
+            gap: 30px; /* 控制項之間的間距 */
+            padding: 20px;
+            background-color: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            flex-wrap: wrap; /* 讓控制項在小螢幕上可以換行 */
+            justify-content: center;
+        }
+        
+        /* 單一控制項的樣式 */
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        /* 拉條與顏色選擇器樣式 */
+        #zoomSlider, #colorPicker {
+            margin-top: 5px;
+        }
+
+        #zoomSlider {
+            width: 200px;
+        }
+
+        /* 讓顏色選擇器看起來大一點 */
+        #colorPicker {
+            width: 50px;
+            height: 30px;
+            padding: 0;
+            border: none;
+            cursor: pointer;
+        }
+
+        #zoomValue {
+            margin-top: 10px;
+            font-size: 1em;
+        }
+
+        /* 小螢幕適應 */
+        @media (max-width: 600px) {
+            #digitalClock {
+                font-size: calc(15vw * var(--zoom-factor)); 
+            }
+            #controls {
+                flex-direction: column;
+                gap: 15px;
+            }
+            #zoomSlider {
+                width: 80vw;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="digitalClock"></div>
+
+    <div id="controls">
+        <div class="control-group">
+            <label for="zoomSlider">縮放比例:</label>
+            <input 
+                type="range" 
+                id="zoomSlider" 
+                min="0.5" 
+                max="2" 
+                step="0.01"  
+                value="1"    
+            >
+            <span id="zoomValue">100%</span>
+        </div>
+        
+        <div class="control-group">
+            <label for="colorPicker">時鐘顏色:</label>
+            <input 
+                type="color" 
+                id="colorPicker" 
+                value="#00ff66" >
+        </div>
+    </div>
+
+    <script>
+        const clockElement = document.getElementById('digitalClock');
+        const zoomSlider = document.getElementById('zoomSlider');
+        const zoomValueSpan = document.getElementById('zoomValue');
+        const colorPicker = document.getElementById('colorPicker'); // 取得顏色選擇器元素
+        const root = document.documentElement;
+
+        // ===================================
+        // 時鐘更新邏輯 
+        // ===================================
+        function updateClock() {
+            const now = new Date();
+            let hours = now.getHours();
+            let minutes = now.getMinutes();
+            let seconds = now.getSeconds();
+
+            hours = hours < 10 ? '0' + hours : hours;
+            minutes = minutes < 10 ? '0' + minutes : minutes;
+            seconds = seconds < 10 ? '0' + seconds : seconds;
+
+            const timeString = hours + ':' + minutes + ':' + seconds;
+            clockElement.textContent = timeString;
+        }
+
+        // ===================================
+        // 縮放控制邏輯
+        // ===================================
+        function handleZoomChange(event) {
+            const newZoomFactor = event.target.value;
+            root.style.setProperty('--zoom-factor', newZoomFactor);
+            const percentage = Math.round(newZoomFactor * 100);
+            zoomValueSpan.textContent = percentage + '%';
+        }
+        
+        // ===================================
+        // 顏色控制邏輯 (新增)
+        // ===================================
+        function handleColorChange(event) {
+            const newColor = event.target.value;
+            // 核心步驟: 更新 CSS 變數 --clock-color
+            root.style.setProperty('--clock-color', newColor);
+        }
+
+
+        // ===================================
+        // 監聽器與初始化
+        // ===================================
+        // 縮放監聽
+        zoomSlider.addEventListener('input', handleZoomChange); 
+        
+        // 顏色監聽: 'input' 事件會在選擇顏色時即時觸發
+        colorPicker.addEventListener('input', handleColorChange);
+
+        // 初始化時鐘
+        updateClock();
+        setInterval(updateClock, 1000);
+    </script>
+
+</body>
+</html>
