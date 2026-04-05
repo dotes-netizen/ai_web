@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>四連桿機構軌跡模擬 (Four-Bar Linkage Simulator)</title>
+    <style>
+        body {
+            font-family: "Microsoft JhengHei", Arial, sans-serif;
+            background-color: #f0f2f5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        h2 { color: #333; }
+        
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        canvas {
+            border: 1px solid #ddd;
+            background-color: #fff;
+            border-radius: 4px;
+            cursor: crosshair;
+        }
+
+        .controls {
+            width: 300px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        label {
+            font-weight: bold;
+            font-size: 14px;
+            margin-bottom: 5px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        input[type=range] {
+            width: 100%;
+            cursor: pointer;
+        }
+
+        .status {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #e8f5e9;
+            color: #2e7d32;
+            border-radius: 5px;
+            font-size: 14px;
+            text-align: center;
+        }
+
+        .error {
+            background-color: #ffebee;
+            color: #c62828;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        button {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+
+        .btn-clear { background-color: #ff9800; color: white; }
+        .btn-clear:hover { background-color: #f57c00; }
+        
+        .btn-reset { background-color: #607d8b; color: white; }
+        .btn-reset:hover { background-color: #455a64; }
+
+        .legend {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+        .legend span { margin-right: 10px; }
+    </style>
+</head>
+<body>
+
+    <h2>四連桿機構動態軌跡模擬</h2>
+
+    <div class="container">
+        <div>
+            <canvas id="simCanvas" width="500" height="500"></canvas>
+            <div class="legend">
+                <span style="color:blue">● 地桿 (Ground)</span>
+                <span style="color:red">● 曲柄 (Crank)</span>
+                <span style="color:green">● 連桿 (Coupler)</span>
+                <span style="color:purple">● 搖桿 (Rocker)</span>
+            </div>
+        </div>
+
+        <div class="controls">
+            <div class="control-group">
+                <label>地桿 (Ground, d): <span id="val-d">200</span></label>
+                <input type="range" id="slider-d" min="50" max="300" value="200">
+            </div>
+
+            <div class="control-group">
+                <label>曲柄 (Crank, a): <span id="val-a">100</span></label>
+                <input type="range" id="slider-a" min="20" max="200" value="100">
+            </div>
+
+            <div class="control-group">
+                <label>連接桿 (Coupler, b): <span id="val-b">250</span></label>
+                <input type="range" id="slider-b" min="50" max="350" value="250">
+            </div>
+
+            <div class="control-group">
+                <label>搖桿 (Rocker, c): <span id="val-c">200</span></label>
+                <input type="range" id="slider-c" min="50" max="350" value="200">
+            </div>
+
+            <div class="status" id="statusMsg">機構狀態：正常運轉</div>
+
+            <div class="btn-group">
+                <button class="btn-clear" onclick="clearTrace()">清除軌跡</button>
+                <button class="btn-reset" onclick="resetDefault()">重置參數</button>
+            </div>
+            
+            <div style="margin-top: 15px; font-size: 13px; color: #555; line-height: 1.5;">
+                <strong>說明：</strong><br>
+                橘色線條為 C 點 (連接桿與搖桿接點) 的運動軌跡。<br>
+                若桿長無法組成三角形，模擬將暫停。
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('simCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // 中心偏移量 (讓機構畫在畫布中間)
+        const offsetX = 100;
+        const offsetY = 300;
+
+        // 參數變數
+        let lenA, lenB, lenC, lenD;
+        let angle = 0;
+        let speed = 0.03;
+        let tracePoints = [];
+        let isBroken = false;
+
+        // 取得 DOM 元素
+        const sliders = {
+            a: document.getElementById('slider-a'),
+            b: document.getElementById('slider-b'),
+            c: document.getElementById('slider-c'),
+            d: document.getElementById('slider-d')
+        };
+        const labels = {
+            a: document.getElementById('val-a'),
+            b: document.getElementById('val-b'),
+            c: document.getElementById('val-c'),
+            d: document.getElementById('val-d')
+        };
+        const statusMsg = document.getElementById('statusMsg');
+
+        // 初始化
+        function init() {
+            updateValues();
+            // 綁定事件
+            for (let key in sliders) {
+                sliders[key].addEventListener('input', () => {
+                    updateValues();
+                    tracePoints = []; // 改變參數時清除舊軌跡
+                });
+            }
+            animate();
+        }
+
+        function updateValues() {
+            lenA = parseInt(sliders.a.value); // 曲柄
+            lenB = parseInt(sliders.b.value); // 連桿
+            lenC = parseInt(sliders.c.value); // 搖桿
+            lenD = parseInt(sliders.d.value); // 地桿
+
+            // 更新文字顯示
+            labels.a.innerText = lenA;
+            labels.b.innerText = lenB;
+            labels.c.innerText = lenC;
+            labels.d.innerText = lenD;
+        }
+
+        function clearTrace() {
+            tracePoints = [];
+        }
+
+        function resetDefault() {
+            sliders.d.value = 200;
+            sliders.a.value = 100;
+            sliders.b.value = 250;
+            sliders.c.value = 200;
+            updateValues();
+            clearTrace();
+        }
+
+        // 計算兩圓交點 (求 C 點座標)
+        // p1: B點 (圓心1), r1: b桿長
+        // p2: D點 (圓心2), r2: c桿長
+        function getIntersection(p1, r1, p2, r2) {
+            const dx = p2.x - p1.x;
+            const dy = p2.y - p1.y;
+            const d = Math.sqrt(dx * dx + dy * dy); // 兩圓心距離
+
+            // 判斷是否能構成三角形 (能否連接)
+            if (d > r1 + r2 || d < Math.abs(r1 - r2) || d === 0) {
+                return null; // 無解
+            }
+
+            const a = (r1 * r1 - r2 * r2 + d * d) / (2 * d);
+            const h = Math.sqrt(r1 * r1 - a * a);
+
+            const x2 = p1.x + a * (dx / d);
+            const y2 = p1.y + a * (dy / d);
+
+            // 這裡有兩個解，通常取其中一個即可保持連貫性
+            // 為了模擬自然，我們取減法解 (對應一般的組裝模式)
+            const x3 = x2 + h * (dy / d); // 解1
+            const y3 = y2 - h * (dx / d);
+            
+            const x3_prime = x2 - h * (dy / d); // 解2
+            const y3_prime = y2 + h * (dx / d);
+
+            // 選擇較適合的解 (簡單模擬固定取一解，若要更精確需判斷上一禎位置)
+            return { x: x3_prime, y: y3_prime };
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 座標變換
+            ctx.save();
+            ctx.translate(offsetX, offsetY);
+            ctx.scale(1, -1); // 翻轉 Y 軸讓上方為正
+
+            // 定義固定點
+            const A = { x: 0, y: 0 }; // 地桿左端
+            const D = { x: lenD, y: 0 }; // 地桿右端
+
+            // 計算 B 點 (曲柄末端)
+            const B = {
+                x: lenA * Math.cos(angle),
+                y: lenA * Math.sin(angle)
+            };
+
+            // 計算 C 點 (連桿與搖桿接點)
+            const C = getIntersection(B, lenB, D, lenC);
+
+            if (C) {
+                isBroken = false;
+                statusMsg.innerText = "機構狀態：正常運轉";
+                statusMsg.className = "status";
+
+                // 紀錄軌跡
+                tracePoints.push(C);
+                if (tracePoints.length > 400) tracePoints.shift(); // 限制軌跡長度
+
+                // 繪製軌跡
+                ctx.beginPath();
+                ctx.strokeStyle = "orange";
+                ctx.lineWidth = 2;
+                for (let i = 0; i < tracePoints.length; i++) {
+                    if (i === 0) ctx.moveTo(tracePoints[i].x, tracePoints[i].y);
+                    else ctx.lineTo(tracePoints[i].x, tracePoints[i].y);
+                }
+                ctx.stroke();
+
+                // 繪製桿件
+                ctx.lineWidth = 5;
+                ctx.lineCap = "round";
+                ctx.lineJoin = "round";
+
+                // 地桿 (Ground) - 藍色
+                ctx.beginPath();
+                ctx.moveTo(A.x, A.y);
+                ctx.lineTo(D.x, D.y);
+                ctx.strokeStyle = "blue";
+                ctx.stroke();
+
+                // 曲柄 (Crank) - 紅色
+                ctx.beginPath();
+                ctx.moveTo(A.x, A.y);
+                ctx.lineTo(B.x, B.y);
+                ctx.strokeStyle = "red";
+                ctx.stroke();
+
+                // 連桿 (Coupler) - 綠色
+                ctx.beginPath();
+                ctx.moveTo(B.x, B.y);
+                ctx.lineTo(C.x, C.y);
+                ctx.strokeStyle = "green";
+                ctx.stroke();
+
+                // 搖桿 (Rocker) - 紫色
+                ctx.beginPath();
+                ctx.moveTo(D.x, D.y);
+                ctx.lineTo(C.x, C.y);
+                ctx.strokeStyle = "purple";
+                ctx.stroke();
+
+                // 繪製節點 (Joints)
+                ctx.fillStyle = "black";
+                [A, B, C, D].forEach(p => {
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+
+                angle += speed; // 繼續旋轉
+
+            } else {
+                isBroken = true;
+                statusMsg.innerText = "機構狀態：斷開 (無法連接)";
+                statusMsg.className = "status error";
+                
+                // 畫出還能畫的部分 (地桿和曲柄)
+                ctx.lineWidth = 5;
+                ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(D.x, D.y); ctx.strokeStyle = "blue"; ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.strokeStyle = "red"; ctx.stroke();
+                
+                // 暫停角度更新，直到參數被修正
+            }
+
+            ctx.restore();
+        }
+
+        function animate() {
+            draw();
+            requestAnimationFrame(animate);
+        }
+
+        // 啟動
+        init();
+
+    </script>
+</body>
+</html>
