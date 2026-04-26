@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>滑步機械車模擬</title>
+    <style>
+        body { background: #2c3e50; color: #fff; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        #ui-card { background: #fff; color: #333; padding: 20px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); width: 560px; }
+        canvas { background: #fdfdfd; border: 2px solid #000; border-radius: 4px; display: block; margin: 10px auto; }
+        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 15px; }
+        .group { display: flex; flex-direction: column; text-align: left; }
+        label { font-size: 12px; font-weight: bold; color: #7f8c8d; }
+        input { width: 100%; cursor: pointer; margin-top: 5px; }
+        .val { color: #e74c3c; float: right; font-family: monospace; font-weight: bold; }
+        button { background: #3498db; color: white; border: none; padding: 12px; width: 100%; cursor: pointer; border-radius: 6px; font-weight: bold; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+
+<div id="ui-card">
+    <h3 style="margin: 0 0 10px 0; text-align: center;">滑步機械車模擬</h3>
+    <button onclick="boot()">啟動模擬器</button>
+    <canvas id="mechanCanvas" width="500" height="350"></canvas>
+    
+    <div class="controls">
+        <div class="group">
+            <label>紅色連桿長度: <span id="v1" class="val">145</span></label>
+            <input type="range" id="i1" min="110" max="180" value="145">
+        </div>
+        <div class="group">
+            <label>綠色曲柄半徑: <span id="v2" class="val">35</span></label>
+            <input type="range" id="i2" min="10" max="60" value="35">
+        </div>
+        <div class="group">
+            <label>運作速度: <span id="v3" class="val">0.03</span></label>
+            <input type="range" id="i3" min="0" max="0.1" step="0.01" value="0.03">
+        </div>
+        <div class="group">
+            <label>木桿總長度: <span id="v4" class="val">300</span></label>
+            <input type="range" id="i4" min="200" max="380" value="300">
+        </div>
+    </div>
+</div>
+
+<script>
+    var c = document.getElementById('mechanCanvas');
+    var ctx = c.getContext('2d');
+    var angle = 0;
+    var running = false;
+
+    function boot() {
+        if (running) return;
+        running = true;
+        setInterval(main, 30);
+    }
+
+    function main() {
+        var R_LEN = parseFloat(document.getElementById('i1').value);
+        var C_RAD = parseFloat(document.getElementById('i2').value);
+        var SPEED = parseFloat(document.getElementById('i3').value);
+        var L_LEN = parseFloat(document.getElementById('i4').value);
+        
+        document.getElementById('v1').innerText = R_LEN;
+        document.getElementById('v2').innerText = C_RAD;
+        document.getElementById('v3').innerText = SPEED;
+        document.getElementById('v4').innerText = L_LEN;
+
+        angle += SPEED;
+        ctx.clearRect(0, 0, 500, 350);
+
+        var ox = 250, oy = 40;  // 頂部支點
+        var mPos = 130;         // 安裝孔高度
+
+        // --- 核心修正：數值尋解 (求解對稱角度) ---
+        // 我們要找到一個 theta 角，使得：
+        // 距離(左安裝孔, 右曲柄末端) 剛好等於 R_LEN
+        var bestTheta = 0.45;
+        var minError = 99999;
+        
+        // 掃描可能的角度範圍 (從 5度到 75度)
+        for (var t = 0.1; t < 1.3; t += 0.005) {
+            // 左孔位置
+            var lx = -Math.sin(t) * mPos;
+            var ly = Math.cos(t) * mPos;
+            // 右孔位置
+            var rx = Math.sin(t) * mPos;
+            var ry = Math.cos(t) * mPos;
+            
+            // 曲柄末端位置 (隨右腳擺動)
+            var ma = angle + t + Math.PI;
+            var cx = rx + Math.cos(ma) * C_RAD;
+            var cy = ry + Math.sin(ma) * C_RAD;
+            
+            // 計算目前連桿長度與目標長度的誤差
+            var dist = Math.sqrt((cx-lx)*(cx-lx) + (cy-ly)*(cy-ly));
+            var err = Math.abs(dist - R_LEN);
+            
+            if (err < minError) {
+                minError = err;
+                bestTheta = t;
+            }
+        }
+
+        var theta = bestTheta;
+
+        // 計算最終所有點的座標
+        var lx = ox - Math.sin(theta) * mPos;
+        var ly = oy + Math.cos(theta) * mPos;
+        var rx = ox + Math.sin(theta) * mPos;
+        var ry = oy + Math.cos(theta) * mPos;
+        var ma = angle + theta + Math.PI;
+        var cx = rx + Math.cos(ma) * C_RAD;
+        var cy = ry + Math.sin(ma) * C_RAD;
+        var flx = ox - Math.sin(theta) * L_LEN;
+        var fly = oy + Math.cos(theta) * L_LEN;
+        var frx = ox + Math.sin(theta) * L_LEN;
+        var fry = oy + Math.cos(theta) * L_LEN;
+
+        // --- 繪製 ---
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+
+        // A字木桿
+        ctx.lineWidth = 14;
+        ctx.strokeStyle = "#D2B48C"; 
+        ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(flx, fly); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(frx, fry); ctx.stroke();
+
+        // 綠色曲柄 (右側 - 長度絕對固定)
+        ctx.lineWidth = 8;
+        ctx.strokeStyle = "#27ae60"; 
+        ctx.beginPath(); ctx.moveTo(rx, ry); ctx.lineTo(cx, cy); ctx.stroke();
+
+        // 紅色連桿 (跨接 - 長度絕對固定)
+        ctx.strokeStyle = "#c0392b"; 
+        ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(lx, ly); ctx.stroke();
+
+        // 接點
+        ctx.fillStyle = "#34495e";
+        [[ox,oy], [lx,ly], [rx,ry], [cx,cy]].forEach(function(p){
+            ctx.beginPath(); ctx.arc(p[0], p[1], 5, 0, 6.3); ctx.fill();
+        });
+    }
+</script>
+</body>
+</html>
